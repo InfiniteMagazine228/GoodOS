@@ -3,22 +3,26 @@ name: Ultimate All-In-One GoodOS Build
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # Cho phép nhấn nút kích hoạt chạy thủ công trên web GitHub
+  workflow_dispatch:
+
+# CẤP QUYỀN VÀNG: Bắt buộc phải có để sửa lỗi 403 khi tạo Release
+permissions:
+  contents: write
 
 jobs:
   build_iso:
     runs-on: ubuntu-latest
     
     env:
-      THEME_NAME: "Acheron" # Nhập tên nhân vật mong muốn (Ví dụ: SilverWolf, RuanMei, Firefly...)
+      THEME_NAME: "Acheron" # Đổi tên nhân vật mong muốn tại đây
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true" # Tắt cảnh báo Node deprecation
 
     steps:
-    # Bước 1: Khởi tạo môi trường ảo (Đã bổ sung mtools để sửa lỗi mformat)
+    # Bước 1: Cài đặt môi trường bao gồm mtools bắt buộc cho grub-mkrescue
     - name: Install Compilers and Tools
       run: |
         sudo apt-get update
         sudo apt-get install -y nasm gcc-multilib g++-multilib grub-pc-bin xorriso git curl wget unzip mtools
-
 
     # Bước 2: Tạo trực tiếp file boot.asm từ Workflow
     - name: Generate boot.asm Inline
@@ -170,32 +174,27 @@ jobs:
     - name: Clone and Fetch Star Rail Themes
       run: |
         mkdir -p isodir/boot/grub/themes
-        # Clone repo chứa theme
         git clone --depth 1 https://github.com/voidlhf/StarRailGrubThemes starrail_repo
         
-        # Di chuyển đúng thư mục assets của nhân vật vào vị trí GRUB của OS
         if [ -d "starrail_repo/assets/themes/${{ env.THEME_NAME }}" ]; then
           cp -r "starrail_repo/assets/themes/${{ env.THEME_NAME }}" isodir/boot/grub/themes/
         else
-          # Nếu cấu trúc file thay đổi, quét sâu để lôi thư mục theme ra
           find starrail_repo/ -type d -name "${{ env.THEME_NAME }}" -exec cp -r {} isodir/boot/grub/themes/ \;
         fi
 
-    # Bước 8: Đóng gói toàn diện và nén đĩa thành ISO
+    # Bước 8: Đóng gói và xuất xưởng tệp ISO
     - name: Assemble ISO Package
       run: |
         cp goodos.bin isodir/boot/
         cp grub.cfg isodir/boot/grub/
-        # Điền tên nhân vật vào file cấu hình thực tế
         sed -i "s/THEME_PLACEHOLDER/${{ env.THEME_NAME }}/g" isodir/boot/grub/grub.cfg
-        # Lệnh đóng gói xuất xưởng file ISO
         grub-mkrescue -o goodos.iso isodir
 
-    # Bước 9: Tự động tạo Release và đẩy trực tiếp file trần .iso lên mạng
+    # Bước 9: Tự động tạo Release và đẩy trực tiếp file trần .iso lên mạng (Đã có quyền contents: write)
     - name: Create GitHub Release and Upload ISO
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v1.0.${{ github.run_number }} # Tự động tăng số phiên bản sau mỗi lần build
+        tag_name: v1.0.${{ github.run_number }}
         name: GoodOS StarRail Release v1.0.${{ github.run_number }}
         files: goodos.iso
       env:
