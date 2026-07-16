@@ -192,7 +192,7 @@ jobs:
 
     # Bước 9: Đẩy sản phẩm lên mục tải về (Artifacts)
     - name: Export Final ISO Artifact
-      uses: actions/upload-release@v4
+      uses: actions/upload-artifact@v4
       with:
         name: GoodOS-StarRail-Edition
         path: goodos.iso
