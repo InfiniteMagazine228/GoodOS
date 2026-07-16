@@ -5,7 +5,6 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
-# CẤP QUYỀN VÀNG: Bắt buộc phải có để sửa lỗi 403 khi tạo Release
 permissions:
   contents: write
 
@@ -14,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      THEME_NAME: "Acheron" # Đổi tên nhân vật mong muốn tại đây
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true" # Tắt cảnh báo Node deprecation
+      THEME_NAME: "Acheron" # Đổi tên nhân vật mong muốn (Ví dụ: SilverWolf, RuanMei, Firefly...)
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
 
     steps:
-    # Bước 1: Cài đặt môi trường bao gồm mtools bắt buộc cho grub-mkrescue
+    # Bước 1: Cài đặt môi trường bao gồm các công cụ đóng gói ISO nâng cao
     - name: Install Compilers and Tools
       run: |
         sudo apt-get update
@@ -134,21 +133,35 @@ jobs:
         }
         EOF
 
-    # Bước 5: Tạo trực tiếp file cấu hình mẫu grub.cfg từ Workflow
+    # Bước 5: Cấu hình GRUB nâng cao (Bổ sung bộ giải mã font đồ họa và sửa lỗi hiển thị)
     - name: Generate grub.cfg Inline
       run: |
         cat << 'EOF' > grub.cfg
-        insmod font
+        # Khởi tạo toàn bộ driver đồ họa để tránh lỗi hiển thị văn bản thô
+        insmod ext2
         insmod vbe
         insmod vga
         insmod video_bochs
         insmod video_cirrus
+        insmod all_video
+        insmod font
         insmod gfxterm
+        insmod gfxmenu
+        insmod png
 
-        set theme=/boot/grub/themes/THEME_PLACEHOLDER/theme.txt
-        set gfxmode=1920x1080,auto
+        # Ép buộc GRUB chạy chế độ đồ họa tiêu chuẩn
+        set gfxmode=1920x1080,1024x768,auto
+        set gfxpayload=keep
         terminal_output gfxterm
 
+        # Định cấu hình đường dẫn tới font chữ nằm trong theme
+        if loadfont /boot/grub/themes/THEME_PLACEHOLDER/font.pf2 ; then
+            set gfxmode=1920x1080,auto
+            terminal_output gfxterm
+        fi
+
+        # Nạp giao diện
+        set theme=/boot/grub/themes/THEME_PLACEHOLDER/theme.txt
         set timeout=10
         set default=0
 
@@ -163,19 +176,20 @@ jobs:
         }
         EOF
 
-    # Bước 6: Tiến hành biên dịch các file vừa tạo tại chỗ
+    # Bước 6: Tiến hành biên dịch các file hệ điều hành tại chỗ
     - name: Compile and Link Kernel
       run: |
         nasm -f elf32 boot.asm -o boot.o
         g++ -m32 -c kernel.cpp -o kernel.o -ffreestanding -O2 -Wall -Wextra -fno-exceptions -fno-rtti
         ld -m elf_i386 -T linker.ld -o goodos.bin boot.o kernel.o
 
-    # Bước 7: Clone bộ theme Honkai: Star Rail từ repo voidlhf
+    # Bước 7: Clone cấu trúc kho chứa và trích xuất Asset đồ họa gốc từ mã nguồn
     - name: Clone and Fetch Star Rail Themes
       run: |
         mkdir -p isodir/boot/grub/themes
-        git clone --depth 1 https://github.com/voidlhf/StarRailGrubThemes starrail_repo
+        git clone --depth 1 https://github.com/voidlhf/StarRailGrubThemes.git starrail_repo
         
+        # Di chuyển tài nguyên đồ họa từ thư mục assets/themes của kho lưu trữ vào vị trí build
         if [ -d "starrail_repo/assets/themes/${{ env.THEME_NAME }}" ]; then
           cp -r "starrail_repo/assets/themes/${{ env.THEME_NAME }}" isodir/boot/grub/themes/
         else
@@ -190,7 +204,7 @@ jobs:
         sed -i "s/THEME_PLACEHOLDER/${{ env.THEME_NAME }}/g" isodir/boot/grub/grub.cfg
         grub-mkrescue -o goodos.iso isodir
 
-    # Bước 9: Tự động tạo Release và đẩy trực tiếp file trần .iso lên mạng (Đã có quyền contents: write)
+    # Bước 9: Tự động tạo Release và đẩy trực tiếp file trần .iso lên mạng
     - name: Create GitHub Release and Upload ISO
       uses: softprops/action-gh-release@v2
       with:
