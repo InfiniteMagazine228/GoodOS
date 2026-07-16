@@ -191,9 +191,12 @@ jobs:
         # Lệnh đóng gói xuất xưởng file ISO
         grub-mkrescue -o goodos.iso isodir
 
-    # Bước 9: Đẩy sản phẩm lên mục tải về (Artifacts)
-    - name: Export Final ISO Artifact
-      uses: actions/upload-artifact@v4
+    # Bước 9: Tự động tạo Release và đẩy trực tiếp file trần .iso lên mạng
+    - name: Create GitHub Release and Upload ISO
+      uses: softprops/action-gh-release@v2
       with:
-        name: GoodOS-StarRail-Edition
-        path: goodos.iso
+        tag_name: v1.0.${{ github.run_number }} # Tự động tăng số phiên bản sau mỗi lần build
+        name: GoodOS StarRail Release v1.0.${{ github.run_number }}
+        files: goodos.iso
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
