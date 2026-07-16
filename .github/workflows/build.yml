@@ -13,11 +13,12 @@ jobs:
       THEME_NAME: "Acheron" # Nhập tên nhân vật mong muốn (Ví dụ: SilverWolf, RuanMei, Firefly...)
 
     steps:
-    # Bước 1: Khởi tạo môi trường ảo (Không cần checkout repo vì file trống)
+    # Bước 1: Khởi tạo môi trường ảo (Đã bổ sung mtools để sửa lỗi mformat)
     - name: Install Compilers and Tools
       run: |
         sudo apt-get update
-        sudo apt-get install -y nasm gcc-multilib g++-multilib grub-pc-bin xorriso git curl wget unzip
+        sudo apt-get install -y nasm gcc-multilib g++-multilib grub-pc-bin xorriso git curl wget unzip mtools
+
 
     # Bước 2: Tạo trực tiếp file boot.asm từ Workflow
     - name: Generate boot.asm Inline
