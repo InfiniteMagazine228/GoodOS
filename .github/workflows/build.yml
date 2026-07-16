@@ -1,0 +1,198 @@
+name: Ultimate All-In-One GoodOS Build
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: # Cho phép nhấn nút kích hoạt chạy thủ công trên web GitHub
+
+jobs:
+  build_iso:
+    runs-on: ubuntu-latest
+    
+    env:
+      THEME_NAME: "Acheron" # Nhập tên nhân vật mong muốn (Ví dụ: SilverWolf, RuanMei, Firefly...)
+
+    steps:
+    # Bước 1: Khởi tạo môi trường ảo (Không cần checkout repo vì file trống)
+    - name: Install Compilers and Tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y nasm gcc-multilib g++-multilib grub-pc-bin xorriso git curl wget unzip
+
+    # Bước 2: Tạo trực tiếp file boot.asm từ Workflow
+    - name: Generate boot.asm Inline
+      run: |
+        cat << 'EOF' > boot.asm
+        MODULEALIGN  equ  1 << 0
+        MEMINFO      equ  1 << 1
+        FLAGS        equ  MODULEALIGN | MEMINFO
+        MAGIC        equ  0x1BADB002
+        CHECKSUM     equ  -(MAGIC + FLAGS)
+
+        section .multiboot
+        align 4
+            dd MAGIC
+            dd FLAGS
+            dd CHECKSUM
+
+        section .bss
+        align 16
+        stack_bottom:
+            resb 16384
+        stack_top:
+
+        section .text
+        global _start
+        extern kernel_main
+
+        _start:
+            mov esp, stack_top
+            push ebx
+            push eax
+            call kernel_main
+
+        .hang:
+            cli
+            hlt
+            jmp .hang
+        EOF
+
+    # Bước 3: Tạo trực tiếp file kernel.cpp từ Workflow
+    - name: Generate kernel.cpp Inline
+      run: |
+        cat << 'EOF' > kernel.cpp
+        void print_string(const char* str, unsigned char color) {
+            volatile char* video_memory = (volatile char*)0xB8000;
+            static int position = 0;
+            for (int i = 0; str[i] != '\0'; ++i) {
+                video_memory[position++] = str[i];
+                video_memory[position++] = color;
+            }
+        }
+
+        bool string_contains(const char* source, const char* target) {
+            if (!source || !target) return false;
+            for (int i = 0; source[i] != '\0'; ++i) {
+                int j = 0;
+                while (target[j] != '\0' && source[i + j] == target[j]) j++;
+                if (target[j] == '\0') return true;
+            }
+            return false;
+        }
+
+        struct multiboot_info {
+            unsigned long flags;
+            unsigned long mem_lower;
+            unsigned long mem_upper;
+            unsigned long boot_device;
+            unsigned long cmdline;
+        };
+
+        extern "C" void kernel_main(unsigned long magic, multiboot_info* info) {
+            volatile char* video_memory = (volatile char*)0xB8000;
+            for (int i = 0; i < 80 * 25 * 2; i += 2) {
+                video_memory[i] = ' ';
+                video_memory[i+1] = 0x07;
+            }
+
+            if (magic != 0x2BADB002) {
+                print_string("[ERROR] Magic Number Mismatch!", 0x0C);
+                return;
+            }
+
+            const char* boot_args = (const char*)info->cmdline;
+
+            if (string_contains(boot_args, "mode=live")) {
+                print_string("==================================================\n", 0x0A);
+                print_string("  GoodOS [LIVE MODE] - Running entirely from RAM  \n", 0x0A);
+                print_string("==================================================\n", 0x0A);
+            } else {
+                print_string("==================================================\n", 0x0B);
+                print_string("  GoodOS Standard Bootable - Initializing System  \n", 0x0B);
+                print_string("==================================================\n", 0x0B);
+            }
+        }
+        EOF
+
+    # Bước 4: Tạo trực tiếp file linker.ld từ Workflow
+    - name: Generate linker.ld Inline
+      run: |
+        cat << 'EOF' > linker.ld
+        ENTRY(_start)
+        SECTIONS
+        {
+            . = 1M;
+            .text BLOCK(4K) : ALIGN(4K) { *(.multiboot) *(.text) }
+            .rodata BLOCK(4K) : ALIGN(4K) { *(.rodata) }
+            .data BLOCK(4K) : ALIGN(4K) { *(.data) }
+            .bss BLOCK(4K) : ALIGN(4K) { *(COMMON) *(.bss) }
+        }
+        EOF
+
+    # Bước 5: Tạo trực tiếp file cấu hình mẫu grub.cfg từ Workflow
+    - name: Generate grub.cfg Inline
+      run: |
+        cat << 'EOF' > grub.cfg
+        insmod font
+        insmod vbe
+        insmod vga
+        insmod video_bochs
+        insmod video_cirrus
+        insmod gfxterm
+
+        set theme=/boot/grub/themes/THEME_PLACEHOLDER/theme.txt
+        set gfxmode=1920x1080,auto
+        terminal_output gfxterm
+
+        set timeout=10
+        set default=0
+
+        menuentry "1: GoodOS bootable" {
+            multiboot /boot/goodos.bin mode=standard
+            boot
+        }
+
+        menuentry "2: Live Mode" {
+            multiboot /boot/goodos.bin mode=live
+            boot
+        }
+        EOF
+
+    # Bước 6: Tiến hành biên dịch các file vừa tạo tại chỗ
+    - name: Compile and Link Kernel
+      run: |
+        nasm -f elf32 boot.asm -o boot.o
+        g++ -m32 -c kernel.cpp -o kernel.o -ffreestanding -O2 -Wall -Wextra -fno-exceptions -fno-rtti
+        ld -m elf_i386 -T linker.ld -o goodos.bin boot.o kernel.o
+
+    # Bước 7: Clone bộ theme Honkai: Star Rail từ repo voidlhf
+    - name: Clone and Fetch Star Rail Themes
+      run: |
+        mkdir -p isodir/boot/grub/themes
+        # Clone repo chứa theme
+        git clone --depth 1 https://github.com starrail_repo
+        
+        # Di chuyển đúng thư mục assets của nhân vật vào vị trí GRUB của OS
+        if [ -d "starrail_repo/assets/themes/${{ env.THEME_NAME }}" ]; then
+          cp -r "starrail_repo/assets/themes/${{ env.THEME_NAME }}" isodir/boot/grub/themes/
+        else
+          # Nếu cấu trúc file thay đổi, quét sâu để lôi thư mục theme ra
+          find starrail_repo/ -type d -name "${{ env.THEME_NAME }}" -exec cp -r {} isodir/boot/grub/themes/ \;
+        fi
+
+    # Bước 8: Đóng gói toàn diện và nén đĩa thành ISO
+    - name: Assemble ISO Package
+      run: |
+        cp goodos.bin isodir/boot/
+        cp grub.cfg isodir/boot/grub/
+        # Điền tên nhân vật vào file cấu hình thực tế
+        sed -i "s/THEME_PLACEHOLDER/${{ env.THEME_NAME }}/g" isodir/boot/grub/grub.cfg
+        # Lệnh đóng gói xuất xưởng file ISO
+        grub-mkrescue -o goodos.iso isodir
+
+    # Bước 9: Đẩy sản phẩm lên mục tải về (Artifacts)
+    - name: Export Final ISO Artifact
+      uses: actions/upload-release@v4
+      with:
+        name: GoodOS-StarRail-Edition
+        path: goodos.iso
