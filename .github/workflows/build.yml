@@ -170,7 +170,7 @@ jobs:
       run: |
         mkdir -p isodir/boot/grub/themes
         # Clone repo chứa theme
-        git clone --depth 1 https://github.com starrail_repo
+        git clone --depth 1 https://github.com/voidlhf/StarRailGrubThemes starrail_repo
         
         # Di chuyển đúng thư mục assets của nhân vật vào vị trí GRUB của OS
         if [ -d "starrail_repo/assets/themes/${{ env.THEME_NAME }}" ]; then
